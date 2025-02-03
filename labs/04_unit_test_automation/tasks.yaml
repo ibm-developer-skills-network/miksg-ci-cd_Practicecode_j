@@ -1,0 +1,94 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: cleanup
+spec:
+  description: This task will clean up a workspace by deleting all of the files.
+  workspaces:
+    - name: source
+  steps:
+    - name: remove
+      image: alpine:3
+      env:
+        - name: WORKSPACE_SOURCE_PATH
+          value: $(workspaces.source.path)
+      workingDir: $(workspaces.source.path)
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+        echo "Removing all files from ${WORKSPACE_SOURCE_PATH} ..."
+        # Delete any existing contents of the directory if it exists.
+        #
+        # We don't just "rm -rf ${WORKSPACE_SOURCE_PATH}" because ${WORKSPACE_SOURCE_PATH} might be "/"
+        # or the root of a mounted volume.
+        if [ -d "${WORKSPACE_SOURCE_PATH}" ] ; then
+          # Delete non-hidden files and directories
+          rm -rf "${WORKSPACE_SOURCE_PATH:?}"/*
+          # Delete files and directories starting with . but excluding ..
+          rm -rf "${WORKSPACE_SOURCE_PATH}"/.[!.]*
+          # Delete files and directories starting with .. plus any other character
+          rm -rf "${WORKSPACE_SOURCE_PATH}"/..?*
+        fi
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: checkstyle
+spec:
+  description: This task runs Checkstyle on the source code.
+  workspaces:
+    - name: source
+  steps:
+    - name: checkstyle
+      image: maven:3.8.6-openjdk-11
+      workingDir: $(workspaces.source.path)
+      command: ["mvn"]
+      args: ["checkstyle:check"]
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: run-tests
+spec:
+  description: This task runs tests using Maven and generates JaCoCo reports (without generating the report).
+  workspaces:
+    - name: source
+      description: The workspace containing the source code to build
+
+  params:
+    - name: MAVEN_IMAGE
+      type: string
+      default: maven:3.9.6-eclipse-temurin-21
+      description: Maven image to use for building and testing
+
+  steps:
+    - name: maven-settings
+      image: $(params.MAVEN_IMAGE)
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/bash
+        mkdir -p /root/.m2
+        cat > /root/.m2/settings.xml << EOF
+        <settings>
+          <mirrors>
+            <mirror>
+              <id>central</id>
+              <name>Maven Central</name>
+              <url>https://repo.maven.apache.org/maven2</url>
+              <mirrorOf>*</mirrorOf>
+            </mirror>
+          </mirrors>
+        </settings>
+        EOF
+
+    - name: build-and-test
+      image: $(params.MAVEN_IMAGE)
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/bash
+        mvn test \
+          -DargLine="-javaagent:/root/.m2/repository/net/bytebuddy/byte-buddy-agent/1.14.10/byte-buddy-agent-1.14.10.jar"
+          

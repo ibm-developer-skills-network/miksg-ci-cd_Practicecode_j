@@ -1,0 +1,54 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: cd-pipeline
+spec:
+  params:
+    - name: repo-url
+      type: string
+    - name: branch
+      type: string
+      default: "master"  # You might want to change this to "main" if that's the default for your repos.
+  
+  workspaces:
+    - name: source  # The workspace where the source code will be mounted
+
+  tasks:
+    - name: init
+      taskRef:
+        name: cleanup  # Clears the workspace, ensuring no residual files from previous runs
+      workspaces:
+        - name: source
+          workspace: source  # Ensures the cleanup happens in the correct workspace
+
+    - name: clone
+      taskRef:
+        name: git-clone  # Ensure this is defined in your Tekton environment or replace with a container that clones the repo
+      params:
+        - name: url
+          value: "$(params.repo-url)"
+        - name: revision
+          value: "$(params.branch)"  # Uses the provided branch or default to 'master'
+      workspaces:
+        - name: output  # Mount the 'output' workspace here; verify the task supports this workspace name
+          workspace: source  # Ensures the clone happens in the 'source' workspace
+      runAfter:
+        - init  # Runs after 'init' (cleanup)
+
+    - name: lint
+      taskRef:
+        name: checkstyle  # Runs Checkstyle as part of the linting process
+      workspaces:
+        - name: source
+          workspace: source  # Ensures Checkstyle runs on the cloned code
+      runAfter:
+        - clone  # Runs after the 'clone' task is successful
+
+    - name: tests
+      taskRef:
+        name: run-tests  # Runs the unit tests and collects JaCoCo coverage
+      workspaces:
+        - name: source
+          workspace: source  # Runs tests on the source code
+      runAfter:
+        - lint  # Runs after 'lint' (Checkstyle) is successful
