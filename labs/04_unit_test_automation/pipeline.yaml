@@ -23,12 +23,17 @@ spec:
 
     - name: clone
       taskRef:
-        name: checkout
+        name: git-clone
       params:
-        - name: repo-url
+        - name: url
           value: "$(params.repo-url)"
         - name: branch
           value: "$(params.branch)"
+      workspaces:
+        - name: output  
+          workspace: pipeline-workspace
+      runAfter:
+        - init  
 
     - name: lint
       taskRef:
