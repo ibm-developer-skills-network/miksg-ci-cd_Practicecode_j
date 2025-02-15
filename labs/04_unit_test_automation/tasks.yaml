@@ -48,3 +48,82 @@ spec:
           # Delete files and directories starting with .. plus any other character
           rm -rf "${WORKSPACE_SOURCE_PATH}"/..?*
         fi
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: checkstyle
+spec:
+  description: "This task runs Checkstyle on the Spring Boot source code."
+  workspaces:
+    - name: source
+  steps:
+    - name: run-checkstyle
+      image: maven:3.9.6-eclipse-temurin-21
+      workingDir: $(workspaces.source.path)
+      command: ["mvn"]
+      args: ["checkstyle:check"]
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: run-tests
+spec:
+  description: This task runs tests for Spring Boot application using Maven and JaCoCo
+  workspaces:
+    - name: source
+      description: The workspace containing the source code to build
+  params:
+    - name: MAVEN_IMAGE
+      type: string
+      default: maven:3.9.6-eclipse-temurin-21
+      description: Maven image with JDK 21 to use for building and testing
+  steps:
+    - name: maven-settings
+      image: $(params.MAVEN_IMAGE)
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/bash
+        mkdir -p ~/.m2
+        cat > ~/.m2/settings.xml << EOF
+        <settings>
+          <mirrors>
+            <mirror>
+              <id>central</id>
+              <name>Maven Central</name>
+              <url>https://repo.maven.apache.org/maven2</url>
+              <mirrorOf>*</mirrorOf>
+            </mirror>
+          </mirrors>
+          <profiles>
+            <profile>
+              <id>jdk21</id>
+              <activation>
+                <activeByDefault>true</activeByDefault>
+              </activation>
+              <properties>
+                <maven.compiler.source>21</maven.compiler.source>
+                <maven.compiler.target>21</maven.compiler.target>
+                <java.version>21</java.version>
+              </properties>
+            </profile>
+          </profiles>
+        </settings>
+        EOF
+
+    - name: build-and-test
+      image: $(params.MAVEN_IMAGE)
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: MOCKITO_MOCK_MAKER
+          value: mock-maker-subclass
+      script: |
+        #!/bin/bash
+        # Create mockito inline settings file
+        mkdir -p src/test/resources/mockito-extensions/
+        echo "mock-maker-subclass" > src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker
+        
+        # Run the tests
+        mvn -Dspring.test.constructor.autowire.mode=all test

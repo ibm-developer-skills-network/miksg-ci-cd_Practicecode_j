@@ -36,20 +36,20 @@ spec:
         - init  
 
     - name: lint
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
       taskRef:
-        name: echo
-      params:
-        - name: message
-          value: "Linting code with CheckStyle..."
+        name: checkstyle
       runAfter:
         - clone
 
     - name: tests
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
       taskRef:
-        name: echo
-      params:
-        - name: message
-          value: "Running unit tests with Junit..."
+        name: run-tests
       runAfter:
         - lint
 
