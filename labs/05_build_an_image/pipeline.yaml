@@ -1,49 +1,49 @@
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
-metadata:  
+metadata:
   name: cd-pipeline
 spec:
-  workspaces:
-    - name: pipeline-workspace
-    - name: maven-settings
-      optional: true
   params:
     - name: repo-url
+      type: string
     - name: branch
-      default: main
-    - name: maven-args
-      description: Arguments to pass to Maven
-      default: "clean package"
+      type: string
+      default: "master"
+
+  workspaces:
+    - name: pipeline-workspace
+
   tasks:
     - name: init
-      workspaces:
-        - name: source
-          workspace: pipeline-workspace          
       taskRef:
         name: cleanup
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
 
     - name: clone
-      workspaces:
-        - name: output
-          workspace: pipeline-workspace          
       taskRef:
         name: git-clone
       params:
-      - name: url
-        value: $(params.repo-url)
-      - name: revision
-        value: $(params.branch)
+        - name: url
+          value: "$(params.repo-url)"
+        - name: branch
+          value: "$(params.branch)"
+      workspaces:
+        - name: output  
+          workspace: pipeline-workspace
       runAfter:
-        - init      
+        - init  
 
     - name: lint
       workspaces:
         - name: source
           workspace: pipeline-workspace
-        - name: maven-settings
-          workspace: maven-settings          
       taskRef:
         name: checkstyle
+      params:
+        - name: message
+          value: "Linting code with CheckStyle..."
       runAfter:
         - clone
 
@@ -51,32 +51,34 @@ spec:
       workspaces:
         - name: source
           workspace: pipeline-workspace
-        - name: maven-settings
-          workspace: maven-settings          
       taskRef:
-        name: maven-test
-      params:
-      - name: maven-args
-        value: "verify -Dmaven.test.failure.ignore=false"
+        name: run-tests
       runAfter:
         - lint
+
+    - name: setup-maven
+      taskRef:
+        name: echo
+      params:
+        - name: message
+          value: "Setting up Maven..."
+      runAfter:
+        - tests
 
     - name: build
       taskRef:
         name: echo
       params:
-      - name: message
-        value: "Building image for $(params.repo-url) ..."
-      - name: DOCKERFILE
-        value: "./Dockerfile"
+        - name: message
+          value: "Building image for $(params.repo-url) ..."
       runAfter:
-        - tests
+        - setup-maven
 
     - name: deploy
       taskRef:
         name: echo
       params:
-      - name: message
-        value: "Deploying $(params.branch) branch of $(params.repo-url) ..."
+        - name: message
+          value: "Deploying $(params.branch) branch of $(params.repo-url) ..."
       runAfter:
         - build

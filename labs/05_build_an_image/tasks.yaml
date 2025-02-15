@@ -13,7 +13,7 @@ spec:
       command: [/bin/echo]
       args: ["$(params.message)"]
 
----
+---      
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
@@ -36,9 +36,16 @@ spec:
         #!/usr/bin/env sh
         set -eu
         echo "Removing all files from ${WORKSPACE_SOURCE_PATH} ..."
+        # Delete any existing contents of the directory if it exists.
+        #
+        # We don't just "rm -rf ${WORKSPACE_SOURCE_PATH}" because ${WORKSPACE_SOURCE_PATH} might be "/"
+        # or the root of a mounted volume.
         if [ -d "${WORKSPACE_SOURCE_PATH}" ] ; then
+          # Delete non-hidden files and directories
           rm -rf "${WORKSPACE_SOURCE_PATH:?}"/*
+          # Delete files and directories starting with . but excluding ..
           rm -rf "${WORKSPACE_SOURCE_PATH}"/.[!.]*
+          # Delete files and directories starting with .. plus any other character
           rm -rf "${WORKSPACE_SOURCE_PATH}"/..?*
         fi
 
@@ -46,132 +53,77 @@ spec:
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
-  name: maven-test
+  name: checkstyle
 spec:
-  params:
-    - name: maven-args
-      description: Arguments to pass to maven test
-      type: string
-      default: "test"
-    - name: maven-settings-xml
-      description: The contents of the settings.xml file to use for Maven builds
-      default: |
-        <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
-        </settings>
+  description: "This task runs Checkstyle on the Spring Boot source code."
   workspaces:
     - name: source
-    - name: maven-settings
-      description: Maven settings directory
-      optional: true
   steps:
-    - name: run-tests
-      # Using Maven with JDK 21
+    - name: run-checkstyle
       image: maven:3.9.6-eclipse-temurin-21
       workingDir: $(workspaces.source.path)
-      script: |
-        #!/bin/bash
-        set -e
-
-        echo "***** Environment *****"
-        java -version
-        mvn --version
-        pwd
-
-        # Create the settings.xml file if a custom one wasn't provided
-        if [ ! -f "$(workspaces.maven-settings.path)/settings.xml" ]; then
-          mkdir -p $(workspaces.maven-settings.path)
-          echo "$(params.maven-settings-xml)" > $(workspaces.maven-settings.path)/settings.xml
-        fi
-
-        echo "***** Running Maven Tests with: $(params.maven-args) *****"
-        mvn -s $(workspaces.maven-settings.path)/settings.xml $(params.maven-args)
+      command: ["mvn"]
+      args: ["checkstyle:check"]
 
 ---
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
-  name: checkstyle
+  name: run-tests
 spec:
-  description: Run checkstyle analysis on Java code
+  description: This task runs tests for Spring Boot application using Maven and JaCoCo
   workspaces:
     - name: source
-    - name: maven-settings
-      description: Maven settings directory
-      optional: true
+      description: The workspace containing the source code to build
+  params:
+    - name: MAVEN_IMAGE
+      type: string
+      default: maven:3.9.6-eclipse-temurin-21
+      description: Maven image with JDK 21 to use for building and testing
   steps:
-    - name: checkstyle
-      # Using Maven with JDK 21
-      image: maven:3.9.6-eclipse-temurin-21
+    - name: maven-settings
+      image: $(params.MAVEN_IMAGE)
       workingDir: $(workspaces.source.path)
       script: |
         #!/bin/bash
-        set -e
-        echo "***** Running Checkstyle *****"
-        
-        # Run checkstyle with latest Google style
-        cat << EOF > checkstyle.xml
-        <?xml version="1.0"?>
-        <!DOCTYPE module PUBLIC
-                "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
-                "https://checkstyle.org/dtds/configuration_1_3.dtd">
-        <module name="Checker">
-            <property name="severity" value="warning"/>
-            <module name="TreeWalker">
-                <module name="JavadocMethod"/>
-                <module name="JavadocType"/>
-                <module name="JavadocVariable"/>
-                <module name="JavadocStyle"/>
-                <module name="ConstantName"/>
-                <module name="LocalFinalVariableName"/>
-                <module name="LocalVariableName"/>
-                <module name="MemberName"/>
-                <module name="MethodName"/>
-                <module name="PackageName"/>
-                <module name="ParameterName"/>
-                <module name="StaticVariableName"/>
-                <module name="TypeName"/>
-                <module name="AvoidStarImport"/>
-                <module name="IllegalImport"/>
-                <module name="RedundantImport"/>
-                <module name="UnusedImports"/>
-                <module name="MethodLength"/>
-                <module name="ParameterNumber"/>
-                <module name="EmptyForIteratorPad"/>
-                <module name="MethodParamPad"/>
-                <module name="NoWhitespaceAfter"/>
-                <module name="NoWhitespaceBefore"/>
-                <module name="OperatorWrap"/>
-                <module name="ParenPad"/>
-                <module name="TypecastParenPad"/>
-                <module name="WhitespaceAfter"/>
-                <module name="WhitespaceAround"/>
-                <module name="ModifierOrder"/>
-                <module name="RedundantModifier"/>
-                <module name="AvoidNestedBlocks"/>
-                <module name="EmptyBlock"/>
-                <module name="LeftCurly"/>
-                <module name="NeedBraces"/>
-                <module name="RightCurly"/>
-                <module name="EmptyStatement"/>
-                <module name="EqualsHashCode"/>
-                <module name="IllegalInstantiation"/>
-                <module name="InnerAssignment"/>
-                <module name="MagicNumber"/>
-                <module name="MissingSwitchDefault"/>
-                <module name="SimplifyBooleanExpression"/>
-                <module name="SimplifyBooleanReturn"/>
-                <module name="DesignForExtension"/>
-                <module name="FinalClass"/>
-                <module name="HideUtilityClassConstructor"/>
-                <module name="InterfaceIsType"/>
-                <module name="VisibilityModifier"/>
-                <module name="ArrayTypeStyle"/>
-                <module name="TodoComment"/>
-                <module name="UpperEll"/>
-            </module>
-        </module>
+        mkdir -p ~/.m2
+        cat > ~/.m2/settings.xml << EOF
+        <settings>
+          <mirrors>
+            <mirror>
+              <id>central</id>
+              <name>Maven Central</name>
+              <url>https://repo.maven.apache.org/maven2</url>
+              <mirrorOf>*</mirrorOf>
+            </mirror>
+          </mirrors>
+          <profiles>
+            <profile>
+              <id>jdk21</id>
+              <activation>
+                <activeByDefault>true</activeByDefault>
+              </activation>
+              <properties>
+                <maven.compiler.source>21</maven.compiler.source>
+                <maven.compiler.target>21</maven.compiler.target>
+                <java.version>21</java.version>
+              </properties>
+            </profile>
+          </profiles>
+        </settings>
         EOF
+
+    - name: build-and-test
+      image: $(params.MAVEN_IMAGE)
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: MOCKITO_MOCK_MAKER
+          value: mock-maker-subclass
+      script: |
+        #!/bin/bash
+        # Create mockito inline settings file
+        mkdir -p src/test/resources/mockito-extensions/
+        echo "mock-maker-subclass" > src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker
         
-        mvn checkstyle:checkstyle -Dcheckstyle.config.location=checkstyle.xml
+        # Run the tests
+        mvn -Dspring.test.constructor.autowire.mode=all test
