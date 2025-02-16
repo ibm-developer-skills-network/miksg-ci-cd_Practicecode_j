@@ -2,22 +2,20 @@
 FROM eclipse-temurin:21-jdk-jammy AS build
 WORKDIR /app
 
-# Copy maven files first to cache dependencies
-COPY mvnw .
-COPY .mvn .mvn
+# Install maven
+RUN apt-get update && apt-get install -y maven
+
+# Copy pom.xml for dependency caching
 COPY pom.xml .
 
-# Make the mvnw script executable
-RUN chmod +x mvnw
-
 # Download dependencies
-RUN ./mvnw dependency:go-offline -B
+RUN mvn dependency:go-offline -B
 
 # Copy source code
 COPY src src
 
 # Build the application
-RUN ./mvnw package -DskipTests
+RUN mvn package -DskipTests
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-jammy
