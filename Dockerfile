@@ -32,8 +32,4 @@ USER spring:spring
 ENTRYPOINT ["java", "-jar", "app.jar"]
 
 # Document that the container listens on port 8080
-EXPOSE 8080
-
-# Add health check
-HEALTHCHECK --interval=30s --timeout=3s \
-  CMD curl -f http://localhost:5000/health || exit 1
+EXPOSE 5000
