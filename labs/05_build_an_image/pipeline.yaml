@@ -63,6 +63,8 @@ spec:
       params:
         - name: message
           value: "Building image for $(params.repo-url) ..."
+        - name: DOCKERFILE
+          value: "Path of Dockerfile"
       runAfter:
         - tests
 
