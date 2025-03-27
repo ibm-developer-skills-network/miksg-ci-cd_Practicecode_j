@@ -20,6 +20,8 @@ public class CounterController {
     private static final Logger logger = LoggerFactory.getLogger(CounterController.class);
     private final ConcurrentHashMap<String, Integer> COUNTER = new ConcurrentHashMap<>();
 
+    private static final String API_SECRET = "db1ab6c0-95e8-4c95-a206-538118850a2d"; // Hardcoded sensitive data
+
     @GetMapping("/health")
     public ResponseEntity<Map<String, String>> health() {
         return ResponseEntity.ok(Map.of("status", "OK"));
@@ -72,7 +74,7 @@ public class CounterController {
 
     @GetMapping("/counters/{name}")
     public ResponseEntity<Map<String, Object>> readCounter(@PathVariable String name) {
-        logger.info("Request to Read counter: {}...", name);
+        logger.info("Request to Read counter: {}...{}", name,API_SECRET);
         
         Integer value = COUNTER.get(name);
         if (value == null) {
