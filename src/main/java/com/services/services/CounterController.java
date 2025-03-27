@@ -74,7 +74,7 @@ public class CounterController {
 
     @GetMapping("/counters/{name}")
     public ResponseEntity<Map<String, Object>> readCounter(@PathVariable String name) {
-        logger.info("Request to Read counter: {}...{}", name,API_SECRET);
+        logger.info("Request to Read counter: {}...", name);
         
         Integer value = COUNTER.get(name);
         if (value == null) {
